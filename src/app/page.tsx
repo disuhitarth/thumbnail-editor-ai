@@ -1,7 +1,7 @@
 'use client';
 
 import Image from "next/image";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface ImageHistoryItem {
   url: string;
@@ -18,32 +18,80 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [response, setResponse] = useState<string>("");
   const [imageHistory, setImageHistory] = useState<ImageHistoryItem[]>([]);
+  const [showPasteHint, setShowPasteHint] = useState<boolean>(false);
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      setSelectedFile(file);
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const imageUrl = e.target?.result as string;
-        console.log('Initial image loaded:', imageUrl.substring(0, 50) + '...');
-        setSelectedImage(imageUrl);
-
-        // Generate thumbnail for original image
-        const thumbnail = await generateThumbnail(imageUrl);
-
-        // Add initial image to history with thumbnail
-        setImageHistory([{
-          url: imageUrl,
-          thumbnail: thumbnail,
-          prompt: "Original upload",
-          timestamp: Date.now(),
-          type: 'original'
-        }]);
-      };
-      reader.readAsDataURL(file);
+      handleImageFromFileWithPrompt(file, "Original upload");
     }
   };
+
+  const handleImageFromFileWithPrompt = async (file: File, prompt: string) => {
+    setSelectedFile(file);
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const imageUrl = e.target?.result as string;
+      console.log('Image loaded:', imageUrl.substring(0, 50) + '...');
+      setSelectedImage(imageUrl);
+
+      // Generate thumbnail for image
+      const thumbnail = await generateThumbnail(imageUrl);
+
+      // Add image to history with thumbnail
+      setImageHistory([{
+        url: imageUrl,
+        thumbnail: thumbnail,
+        prompt: prompt,
+        timestamp: Date.now(),
+        type: 'original'
+      }]);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handlePaste = async (e: ClipboardEvent) => {
+    e.preventDefault();
+    const clipboardItems = e.clipboardData?.items;
+
+    if (clipboardItems) {
+      for (let i = 0; i < clipboardItems.length; i++) {
+        const item = clipboardItems[i];
+
+        if (item.type.indexOf('image') !== -1) {
+          const blob = item.getAsFile();
+          if (blob) {
+            const file = new File([blob], 'pasted-image.png', { type: blob.type });
+            await handleImageFromFileWithPrompt(file, "Pasted from clipboard");
+            setResponse('📋 Image pasted from clipboard!');
+            setShowPasteHint(false);
+            break;
+          }
+        }
+      }
+    }
+  };
+
+  useEffect(() => {
+    // Add paste event listener
+    const handlePasteEvent = (e: ClipboardEvent) => handlePaste(e);
+    document.addEventListener('paste', handlePasteEvent);
+
+    // Show paste hint on Ctrl/Cmd+V keydown
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && !selectedImage) {
+        setShowPasteHint(true);
+        setTimeout(() => setShowPasteHint(false), 2000);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('paste', handlePasteEvent);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedImage]);
 
   const convertDataUrlToFile = async (dataUrl: string, filename: string): Promise<File> => {
     const response = await fetch(dataUrl);
@@ -168,22 +216,34 @@ export default function Home() {
               <h1 className="text-4xl font-bold text-gray-800 mb-4">
                 ✨ Thumbnail Editor
               </h1>
-              <p className="text-gray-600 mb-8">Upload an image to get started</p>
+              <p className="text-gray-600 mb-8">Upload an image or paste from clipboard to get started</p>
             </div>
 
-            <label
-              htmlFor="image-upload"
-              className="cursor-pointer bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold py-4 px-8 rounded-xl shadow-lg transform hover:scale-105 transition-all duration-200 inline-block"
-            >
-              📤 Upload Thumbnail
-            </label>
-            <input
-              id="image-upload"
-              type="file"
-              accept="image/*"
-              onChange={handleImageUpload}
-              className="hidden"
-            />
+            <div className="space-y-4">
+              <label
+                htmlFor="image-upload"
+                className="cursor-pointer bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold py-4 px-8 rounded-xl shadow-lg transform hover:scale-105 transition-all duration-200 inline-block"
+              >
+                📤 Upload Thumbnail
+              </label>
+              <input
+                id="image-upload"
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                className="hidden"
+              />
+
+              <div className="text-gray-500 text-sm">
+                or press <kbd className="bg-gray-200 px-2 py-1 rounded text-xs font-mono">Ctrl+V</kbd> to paste an image
+              </div>
+
+              {showPasteHint && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-blue-700 text-sm animate-pulse">
+                  📋 Ready to paste! The image in your clipboard will be uploaded.
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <div className="flex flex-col items-center space-y-8 w-full max-w-4xl">
