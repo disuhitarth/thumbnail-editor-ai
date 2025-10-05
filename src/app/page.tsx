@@ -5,8 +5,10 @@ import { useState } from "react";
 
 interface ImageHistoryItem {
   url: string;
+  thumbnail: string;
   prompt: string;
   timestamp: number;
+  type: 'original' | 'generated';
 }
 
 export default function Home() {
@@ -22,14 +24,21 @@ export default function Home() {
     if (file) {
       setSelectedFile(file);
       const reader = new FileReader();
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
         const imageUrl = e.target?.result as string;
+        console.log('Initial image loaded:', imageUrl.substring(0, 50) + '...');
         setSelectedImage(imageUrl);
-        // Add initial image to history
+
+        // Generate thumbnail for original image
+        const thumbnail = await generateThumbnail(imageUrl);
+
+        // Add initial image to history with thumbnail
         setImageHistory([{
           url: imageUrl,
+          thumbnail: thumbnail,
           prompt: "Original upload",
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          type: 'original'
         }]);
       };
       reader.readAsDataURL(file);
@@ -42,11 +51,50 @@ export default function Home() {
     return new File([blob], filename, { type: blob.type });
   };
 
-  const handleHistoryClick = async (historyItem: ImageHistoryItem) => {
+  const generateThumbnail = async (imageUrl: string, maxSize: number = 150): Promise<string> => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new window.Image();
+
+      img.onload = () => {
+        // Calculate thumbnail dimensions while maintaining aspect ratio
+        let { width, height } = img;
+        if (width > height) {
+          if (width > maxSize) {
+            height = (height * maxSize) / width;
+            width = maxSize;
+          }
+        } else {
+          if (height > maxSize) {
+            width = (width * maxSize) / height;
+            height = maxSize;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        // Draw and compress the image
+        ctx?.drawImage(img, 0, 0, width, height);
+
+        // Convert to compressed JPEG for smaller file size
+        const thumbnailDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        resolve(thumbnailDataUrl);
+      };
+
+      img.src = imageUrl;
+    });
+  };
+
+  const handleHistoryClick = async (historyItem: ImageHistoryItem, index: number) => {
     setSelectedImage(historyItem.url);
     const file = await convertDataUrlToFile(historyItem.url, 'restored-image.png');
     setSelectedFile(file);
     setResponse(`🔄 Restored image from: "${historyItem.prompt}"`);
+
+    // Pop the history stack to this point (remove everything after this index)
+    setImageHistory(prev => prev.slice(0, index + 1));
   };
 
   const handleSubmit = async () => {
@@ -72,6 +120,7 @@ export default function Home() {
 
       if (data.success && data.generatedImage) {
         setResponse(`✅ Success! Image processed (${Math.round(data.imageSize / 1024)}KB)`);
+        console.log('Generated image received:', data.generatedImage.substring(0, 50) + '...');
 
         // Update current image to the generated result
         setSelectedImage(data.generatedImage);
@@ -80,12 +129,18 @@ export default function Home() {
         const generatedFile = await convertDataUrlToFile(data.generatedImage, 'generated-image.png');
         setSelectedFile(generatedFile);
 
-        // Add to history
+        // Generate thumbnail for generated image
+        const thumbnail = await generateThumbnail(data.generatedImage);
+
+        // Add to history with thumbnail
         const newHistoryItem: ImageHistoryItem = {
           url: data.generatedImage,
+          thumbnail: thumbnail,
           prompt: instructions,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          type: 'generated'
         };
+        console.log('Adding to history:', newHistoryItem.prompt, newHistoryItem.url.substring(0, 50) + '...');
         setImageHistory(prev => [...prev, newHistoryItem]);
 
         // Clear instructions for next iteration
@@ -210,17 +265,24 @@ export default function Home() {
               {imageHistory.map((item, index) => (
                 <div
                   key={item.timestamp}
-                  onClick={() => handleHistoryClick(item)}
+                  onClick={() => handleHistoryClick(item, index)}
                   className="flex-shrink-0 cursor-pointer group"
                 >
                   <div className="relative">
-                    <Image
-                      src={item.url}
-                      alt={`History ${index + 1}`}
-                      width={120}
-                      height={120}
-                      className="w-20 h-20 object-cover rounded-lg border-2 border-gray-200 group-hover:border-blue-500 transition-all duration-200 group-hover:scale-105"
-                    />
+                    <div
+                      className="w-20 h-20 rounded-lg border-2 border-gray-200 group-hover:border-blue-500 transition-all duration-200 group-hover:scale-105 bg-cover bg-center bg-no-repeat relative"
+                      style={{
+                        backgroundImage: `url(${item.thumbnail})`,
+                        backgroundColor: item.thumbnail ? 'transparent' : '#f3f4f6'
+                      }}
+                    >
+                      {/* Type indicator */}
+                      <div className="absolute top-1 right-1 w-3 h-3 rounded-full border border-white shadow-sm">
+                        <div className={`w-full h-full rounded-full ${
+                          item.type === 'original' ? 'bg-blue-500' : 'bg-green-500'
+                        }`}></div>
+                      </div>
+                    </div>
                     <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded-lg transition-all duration-200 flex items-center justify-center">
                       <span className="text-white opacity-0 group-hover:opacity-100 text-xs font-bold">
                         Restore
