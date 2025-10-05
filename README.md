@@ -11,7 +11,7 @@
 ## 🚀 Overview
 
 AI Thumbnail Editor is a modern, responsive web application that leverages Google's Gemini AI to provide intelligent image editing capabilities. Upload images through drag-and-drop or clipboard paste, then use natural language prompts to transform your visuals with AI-powered editing.
-![Uploading image.png…]()
+![Uploading image.png…](public/image 101.png)
 
 
 ### ✨ Key Features
